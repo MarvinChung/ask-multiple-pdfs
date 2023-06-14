@@ -1,14 +1,20 @@
+import os
+os.environ["OPENAI_API_BASE"]= "http://35.189.163.143:8080/v1"
+os.environ["OPENAI_API_KEY"]="EMPTY"
 import streamlit as st
-from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
-from langchain.vectorstores import FAISS
+from langchain.embeddings.openai import OpenAIEmbeddings
+# from langchain.vectorstores import FAISS
+from langchain.vectorstores.pinecone import Pinecone
 from langchain.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import css, bot_template, user_template
-from langchain.llms import HuggingFaceHub
+# from langchain.llms import HuggingFaceHub
+import pinecone 
+
+
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -22,23 +28,29 @@ def get_pdf_text(pdf_docs):
 def get_text_chunks(text):
     text_splitter = CharacterTextSplitter(
         separator="\n",
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=512,
+        chunk_overlap=0,
         length_function=len
     )
     chunks = text_splitter.split_text(text)
     return chunks
 
 
-def get_vectorstore(text_chunks):
-    embeddings = OpenAIEmbeddings()
+def get_vectorstore(pinecone_index, pinecone_api_key, pinecone_env, text_chunks = None):
+    embeddings = OpenAIEmbeddings(model="multilingual-e5-base")
     # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
-    vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
+    # vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
+    pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
+
+    if text_chunks == None:
+        vectorstore = Pinecone.from_existing_index(pinecone_index, embeddings)
+    else:
+        vectorstore = Pinecone.from_texts(text_chunks, embeddings, index_name=pinecone_index, batch_size=1)
     return vectorstore
 
 
 def get_conversation_chain(vectorstore):
-    llm = ChatOpenAI()
+    llm = ChatOpenAI(model_name="redpajama-incite-7b-zh")
     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
 
     memory = ConversationBufferMemory(
@@ -65,7 +77,6 @@ def handle_userinput(user_question):
 
 
 def main():
-    load_dotenv()
     st.set_page_config(page_title="Chat with multiple PDFs",
                        page_icon=":books:")
     st.write(css, unsafe_allow_html=True)
@@ -81,6 +92,17 @@ def main():
         handle_userinput(user_question)
 
     with st.sidebar:
+        pinecone_api_key     = st.text_input("Pinecone API key", type="password")
+        pinecone_env         = st.text_input("Pinecone environment")
+        pinecone_index       = st.text_input("Pinecone index name")
+
+        if st.button("Connect Pinecone"):
+            vectorstore = get_vectorstore(pinecone_index, pinecone_api_key, pinecone_env)
+
+            # create conversation chain
+            st.session_state.conversation = get_conversation_chain(
+                    vectorstore)
+
         st.subheader("Your documents")
         pdf_docs = st.file_uploader(
             "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
@@ -93,7 +115,7 @@ def main():
                 text_chunks = get_text_chunks(raw_text)
 
                 # create vector store
-                vectorstore = get_vectorstore(text_chunks)
+                vectorstore = get_vectorstore(pinecone_index, pinecone_api_key, pinecone_env, text_chunks)
 
                 # create conversation chain
                 st.session_state.conversation = get_conversation_chain(
