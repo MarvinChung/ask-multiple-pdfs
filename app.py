@@ -64,8 +64,12 @@ def get_conversation_chain(vectorstore):
 
 
 def handle_userinput(user_question):
+    print("user_question:", user_question)
+
     response = st.session_state.conversation({'question': user_question})
     st.session_state.chat_history = response['chat_history']
+
+    print("get_relevant_documents:", st.session_state.conversation._get_docs(user_question, None))
 
     for i, message in enumerate(st.session_state.chat_history):
         if i % 2 == 0:
@@ -86,15 +90,23 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
+    default_pinecone_api_key = "d04018e5-4201-44cb-8141-3253264fc4af"
+    default_pinecone_env = "us-west4-gcp"
+    default_pinecone_index = "pinecone-demo"
+    vectorstore = get_vectorstore(default_pinecone_index, default_pinecone_api_key, default_pinecone_env)
+
+    # create conversation chain
+    st.session_state.conversation = get_conversation_chain(vectorstore)
+
     st.header("Chat with multiple PDFs :books:")
     user_question = st.text_input("Ask a question about your documents:")
     if user_question:
         handle_userinput(user_question)
 
     with st.sidebar:
-        pinecone_api_key     = st.text_input("Pinecone API key", type="password")
-        pinecone_env         = st.text_input("Pinecone environment")
-        pinecone_index       = st.text_input("Pinecone index name")
+        pinecone_api_key     = st.text_input("Pinecone API key", type="password", value="d04018e5-4201-44cb-8141-3253264fc4af")
+        pinecone_env         = st.text_input("Pinecone environment", value="us-west4-gcp")
+        pinecone_index       = st.text_input("Pinecone index name", value="pinecone-demo")
 
         if st.button("Connect Pinecone"):
             vectorstore = get_vectorstore(pinecone_index, pinecone_api_key, pinecone_env)
