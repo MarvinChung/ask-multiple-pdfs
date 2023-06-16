@@ -49,8 +49,11 @@ def get_vectorstore(pinecone_index, pinecone_api_key, pinecone_env, text_chunks 
     return vectorstore
 
 
-def get_conversation_chain(vectorstore):
-    llm = ChatOpenAI(model_name="redpajama-incite-7b-zh")
+def get_conversation_chain(vectorstore, model_name="redpajama-incite-7b-zh-lora", temperature=0.7):
+    llm = ChatOpenAI(
+        model_name=model_name, 
+        temperature=temperature,
+        model_kwargs={"top_p":0.0, "top_k":0.0})
     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
 
     memory = ConversationBufferMemory(
@@ -104,6 +107,13 @@ def main():
         handle_userinput(user_question)
 
     with st.sidebar:
+        st.subheader("parameters")
+        model_name = st.selectbox(
+            'Model Name',
+            ('redpajama-incite-7b-zh-lora', 'redpajama-incite-7b-zh', 'bloom-zh-1b1'))
+        temperature = st.slider("temperature", 0.0, 2.0, 0.7)
+
+        st.subheader("Pinecone")
         pinecone_api_key     = st.text_input("Pinecone API key", type="password", value="d04018e5-4201-44cb-8141-3253264fc4af")
         pinecone_env         = st.text_input("Pinecone environment", value="us-west4-gcp")
         pinecone_index       = st.text_input("Pinecone index name", value="pinecone-demo")
@@ -113,7 +123,7 @@ def main():
 
             # create conversation chain
             st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+                    vectorstore, model_name, temperature)
 
         st.subheader("Your documents")
         pdf_docs = st.file_uploader(
@@ -131,7 +141,7 @@ def main():
 
                 # create conversation chain
                 st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+                    vectorstore, model_name, temperature)
 
 
 if __name__ == '__main__':
