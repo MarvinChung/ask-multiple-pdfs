@@ -1,8 +1,9 @@
-langchain==0.0.132
+langchain==0.0.202
 PyPDF2==3.0.1
 streamlit==1.22.0
 openai==0.27.6
 pinecone-client==2.2.1
+sentence_transformers
 
 # uncomment to use huggingface llms
 # huggingface-hub==0.14.1
