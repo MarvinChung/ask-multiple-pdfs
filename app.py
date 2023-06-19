@@ -18,7 +18,6 @@ from PyPDF2 import PdfReader
 import streamlit as st
 
 qa_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
-{history}
 
 ### Instruction:
 {question}
@@ -32,8 +31,11 @@ qa_prompt_template = """Below is an instruction that describes a task, paired wi
 
 # Rewrite the following sentence for clarity.
 REDPAJAMA_QA_PROMPT = PromptTemplate(
-    template=qa_prompt_template, input_variables=["history", "context", "question"]
+    template=qa_prompt_template, input_variables=["context", "question"]
 )
+# REDPAJAMA_QA_PROMPT = PromptTemplate(
+#     template=qa_prompt_template, input_variables=["history", "context", "question"]
+# )
 
 # condense_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
 
@@ -164,7 +166,7 @@ def handle_userinput(user_question):
     # print("get_relevant_documents:", st.session_state.conversation._get_docs(user_question, None))
     print("memory:", st.session_state.conversation.combine_documents_chain.memory)
     
-    for i, message in enumerate(st.session_state.chat_history):
+    for i, message in enumerate(st.session_state.chat_history[-1:]):
         st.write(user_template.replace(
             "{{MSG}}", message[0]), unsafe_allow_html=True)
         st.write(bot_template.replace(
@@ -190,7 +192,8 @@ def main():
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(vectorstore)
 
-    st.header("Chat with multiple PDFs :books:")
+    # st.header("Chat with multiple PDFs :books:")
+    st.header("王品永續報告書 機器人 :book:")
 
     # user_question = st.text_input("Ask a question about your documents:", key='widget', on_change=submit)
     user_question = st.text_input("Ask a question about your documents:")

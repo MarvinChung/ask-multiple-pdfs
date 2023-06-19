@@ -15,5 +15,5 @@ docker build -t ask-multiple-pdfs .
 ```
 2. Run docker
 ```
-docker run --rm -p 8501:8501 ask-multiple-pdfs
+docker run -it -p 8501:8501 ask-multiple-pdfs
 ```
