@@ -17,17 +17,52 @@ import pinecone
 from PyPDF2 import PdfReader
 import streamlit as st
 
-qa_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
+# qa_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that exactly answer the question from the context, or if the answer is not inferrable by the context, state so. Write as concise as possible:
 
+# ### Instruction:
+#  請依據文章回答：陶朱隱園誰設計的?
+
+# ### Input:
+#  陶朱隱園（英語：Tao Zhu Yin Yuan）是位於臺灣臺北市信義計畫區的豪宅大樓，位在松勇路及松高路口，土地面積約為2468坪，由威京集團的中華工程與亞太工商聯合建，建築師為比利時籍的文森·卡利博。該建築樓高93.2公尺，地上樓層21樓，地下樓層4樓，總樓地板面積為12,962坪，於2018年第三季竣工，第一戶的正式交易日期為次年7月3日。
+
+# 建築外觀特殊，屬於少有的旋轉建築，每層樓旋轉4.5度，頂樓設有直升機停機坪，內部則共有七部電梯，其中一部可承載超跑或救護車；其中每戶約三百坪，訴求垂直森林建築，種植超過 2.3 萬顆的喬灌木，裡面甚至還有叢林水瀑布，陽台部分的面積超過五十坪。2018年即完工取得使用執照，直到2019年出現首筆交易，由相關企業公司承耀公司買下7樓戶。過去一兩年實品屋完工後一直沒開放賞屋，市場傳出陶朱隱園價格太高乾脆封盤不賣。
+
+# ### Response:
+#  文森·卡利博
+
+# -----
+#  Below is an instruction that describes a task, paired with an input that provides further context. Write a response that exactly answer the question from the context, or if the answer is not inferrable by the context, state so. Write as concise as possible:
+
+# ### Instruction:
+#  請依據文章回答：{question}
+
+# ### Input:
+#  {context}
+
+# ### Response:
+# """ 
+
+# qa_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that exactly answer the question from the context, or if the answer is not inferrable by the context, state so. Write as concise as possible:
+ 
+# ### Instruction:
+#  請依據以下文章，只截取文章中的一段文字來回答這個問題：{question}
+
+# ### Input:
+#  {context}
+
+# ### Response:
+# """ 
+
+qa_prompt_template = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that exactly answer the question from the context, or if the answer is not inferrable by the context, state so. Write as concise as possible:
+ 
 ### Instruction:
-{question}
+ 請依據文章，只摘要文章中的一段文字來回答這個問題：{question}
 
 ### Input:
-{context}
+ {context}
 
 ### Response:
 """ 
-
 
 # Rewrite the following sentence for clarity.
 REDPAJAMA_QA_PROMPT = PromptTemplate(
@@ -138,22 +173,17 @@ def get_conversation_chain(vectorstore, model_name="redpajama-incite-7b-zh-instr
     # )
     # return conversation_chain
 
-    conversation_chain = RetrievalQA.from_chain_type(
+    llm_chain = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
         retriever=vectorstore.as_retriever(),
         chain_type_kwargs={
             "prompt": REDPAJAMA_QA_PROMPT,
-            "verbose": True,
-            "memory": ConversationBufferMemory(
-                memory_key="history",
-                input_key="question",
-                human_prefix="\n### Instruction",
-                ai_prefix="\n### Response"),
+            "verbose": True
         },
     )
 
-    return conversation_chain
+    return llm_chain
 
 
 def handle_userinput(user_question):
@@ -161,16 +191,32 @@ def handle_userinput(user_question):
     response = st.session_state.conversation.run({'query': user_question})
     print("response:", response)
 
-    st.session_state.chat_history.append((user_question, response))
+    section = {"user_question": user_question, "response": response, "docs": []}
 
-    # print("get_relevant_documents:", st.session_state.conversation._get_docs(user_question, None))
-    print("memory:", st.session_state.conversation.combine_documents_chain.memory)
-    
-    for i, message in enumerate(st.session_state.chat_history[-1:]):
+    # print("memory:", st.session_state.conversation.combine_documents_chain.memory)
+    print("get_relevant_documents:")
+    for ct, doc in enumerate(st.session_state.conversation._get_docs(user_question)):
+        print("=================")
+        print("ct:", ct)
+        print(doc)
+        section["docs"].append(doc.page_content)
+
+    st.session_state.chat_history.append(section)
+
+    nl = "\n"
+    for i, section in enumerate(st.session_state.chat_history[-1:]):
         st.write(user_template.replace(
-            "{{MSG}}", message[0]), unsafe_allow_html=True)
+            "{{MSG}}", section["user_question"]), unsafe_allow_html=True)
+        for ct, doc in enumerate(section["docs"]):
+            intro = f"以下內容為與本問題最相關的文件 {ct+1}:"
+            st.write(bot_template.replace(
+                "{{MSG}}", intro), unsafe_allow_html=True)
+            st.write(bot_template.replace(
+                "{{MSG}}", doc), unsafe_allow_html=True)
+
+        robot_ans = f"根據相關文件，" + section["response"]
         st.write(bot_template.replace(
-            "{{MSG}}", message[1]), unsafe_allow_html=True)
+            "{{MSG}}", robot_ans), unsafe_allow_html=True)
 
 
 def main():
@@ -192,10 +238,11 @@ def main():
         # create conversation chain
         st.session_state.conversation = get_conversation_chain(vectorstore)
 
-    # st.header("Chat with multiple PDFs :books:")
-    st.header("王品永續報告書 機器人 :book:")
+    st.header("Chat with multiple PDFs :books:")
+    # st.header("王品永續報告書 機器人 :book:")
 
     # user_question = st.text_input("Ask a question about your documents:", key='widget', on_change=submit)
+    st.subheader("目前的pinecone 存放了王品永續報告書，你可以嘗試詢問'王品的理念為何'")
     user_question = st.text_input("Ask a question about your documents:")
     if user_question:
         handle_userinput(user_question)
