@@ -13,6 +13,7 @@ from langchain.chains.question_answering import load_qa_chain
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.document_loaders import TextLoader
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 # from langchain.chains.conversational_retrieval.prompts import CONDENSE_QUESTION_PROMPT
 from htmlTemplates import css, bot_template, user_template
 import pinecone 
@@ -62,38 +63,38 @@ def get_text_chunks(text):
 #     return texts
 
 
-def get_vectorstore(texts):
-    model_kwargs = {'device': 'cpu'}
+def update_vectorstore(texts):
+    # model_kwargs = {'device': 'cpu'}
     embeddings = HuggingFaceEmbeddings(
         model_name="intfloat/multilingual-e5-base",
-        model_kwargs=model_kwargs
+        # model_kwargs=model_kwargs
     )
     # embeddings = OpenAIEmbeddings()
 
     # embeddings = OpenAIEmbeddings(openai_api_key="")
-    docsearch = Chroma.from_texts(texts, embeddings)
+    st.session_state.vectorstore = Chroma.from_texts(texts, embeddings)
 
-    return docsearch
+def update_llm():
+    model_name = st.session_state.model_name
+    print("model_name:", model_name)
+    st.session_state.llm = ChatOpenAI(
+            model_name=model_name, #"redpajama-incite-7b-zh-instruct", 
+            streaming=True, callbacks=[StreamingStdOutCallbackHandler()],
+            temperature=0.0,
+            model_kwargs={"top_p":0.0, "frequency_penalty": 1.1})
 
+def update_conversation_chain():
 
-def get_conversation_chain(vectorstore, model_name="redpajama-incite-7b-zh-chat", temperature=0.0):
-
-    llm = ChatOpenAI(
-        model_name=model_name, 
-        temperature=temperature,
-        model_kwargs={"top_p":0.0, "frequency_penalty": 1.1})
-
-    llm_chain = RetrievalQA.from_chain_type(
-        llm=llm,
+    st.session_state.conversation = RetrievalQA.from_chain_type(
+        llm=st.session_state.llm,
         chain_type="stuff",
-        retriever=vectorstore.as_retriever(),
+        retriever=st.session_state.vectorstore.as_retriever(),
         chain_type_kwargs={
             "prompt": REDPAJAMA_QA_PROMPT,
             "verbose": True
         },
     )
 
-    return llm_chain
 
 
 def handle_userinput(user_question):
@@ -118,6 +119,11 @@ def handle_userinput(user_question):
     for i, section in enumerate(st.session_state.chat_history[-1:]):
         st.write(user_template.replace(
             "{{MSG}}", section["user_question"]), unsafe_allow_html=True)
+
+        robot_ans = f"根據相關文件，" + section["response"]
+        st.write(bot_template.replace(
+            "{{MSG}}", robot_ans), unsafe_allow_html=True)
+
         for ct, doc in enumerate(section["docs"]):
             intro = f"以下內容為與本問題最相關的段落 {ct+1}:"
             st.write(bot_template.replace(
@@ -125,9 +131,7 @@ def handle_userinput(user_question):
             st.write(bot_template.replace(
                 "{{MSG}}", doc), unsafe_allow_html=True)
 
-        robot_ans = f"根據相關文件，" + section["response"]
-        st.write(bot_template.replace(
-            "{{MSG}}", robot_ans), unsafe_allow_html=True)
+        
 
 
 def main():
@@ -139,6 +143,10 @@ def main():
         st.session_state.conversation = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+    if "vectorstore" not in st.session_state:
+        st.session_state.vectorstore = None
+    if "llm" not in st.session_state:
+        st.session_state.llm = None
 
     # if "init" not in st.session_state:
     #     texts = get_text_chunks()
@@ -147,23 +155,21 @@ def main():
     #     st.session_state.init = True
 
     st.header("Chat with multiple PDFs :books:")
-    # st.header("幻境互動有限公司永續報告書 機器人 :book:")
-
-    # user_question = st.text_input("Ask a question about your documents:", key='widget', on_change=submit)
-    if st.session_state.conversation:
-        user_question = st.text_input("Ask a question about your documents:")
-        if user_question:
-            handle_userinput(user_question)
+    
+    user_question = st.text_input("Ask a question about your documents:")
+    if user_question and st.session_state.conversation:
+        update_conversation_chain()
+        handle_userinput(user_question)
+    elif user_question:
+        st.write("pdf is not uploaded yet", unsafe_allow_html=True)
 
     with st.sidebar:
         st.subheader("parameters")
-        # model_name = st.selectbox(
-        #     'Model Name',
-        #     ('redpajama-incite-7b-zh-chat', 'chinese-alpaca-plus-7b-hf'))
+
         model_name = st.selectbox(
             'Model Name',
-            ('redpajama-incite-7b-zh-chat', 'chat-gpt'))
-        temperature = st.slider("temperature", 0.0, 2.0, 0.0)
+            ('redpajama-incite-7b-zh-instruct', 'chinese-alpaca-plus-7b-hf'), key='model_name', on_change=update_llm)
+        # temperature = st.slider("temperature", 0.0, 2.0, 0.0)
 
         st.subheader("Your documents")
         pdf_docs = st.file_uploader(
@@ -178,10 +184,13 @@ def main():
                 text_chunks = get_text_chunks(raw_text)
 
                 # create vector store
-                vectorstore = get_vectorstore(text_chunks)
+                update_vectorstore(text_chunks)
+
+                # create llm
+                update_llm()
 
                 # create conversation chain
-                st.session_state.conversation = get_conversation_chain(vectorstore, model_name, temperature)
+                update_conversation_chain()
 
 
 if __name__ == '__main__':
